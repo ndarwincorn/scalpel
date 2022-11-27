@@ -1,28 +1,27 @@
-{self}: 
-{config, pkgs, lib, ...}:
+{ self }:
+{ config, pkgs, lib, ... }:
 
 with lib;
 
 let
   cfg = config.scalpel;
-  
+
   trafos = builtins.map (trafo:
-      let
-        matchers = builtins.listToAttrs (builtins.map (matcher:
-          { name = "${matcher.pattern}"; value = "${matcher.secret}"; }
-        ) (builtins.attrValues trafo.matchers));
-      in
-      self.mk_scalpel {
-        inherit matchers;
-        inherit (trafo) source destination mode group;
-        user = trafo.owner;
-      }) (builtins.attrValues cfg.trafos);
+    let
+      matchers = builtins.listToAttrs (builtins.map (matcher: {
+        name = "${matcher.pattern}";
+        value = "${matcher.secret}";
+      }) (builtins.attrValues trafo.matchers));
+    in self.mk_scalpel {
+      inherit matchers;
+      inherit (trafo) source destination mode group;
+      user = trafo.owner;
+    }) (builtins.attrValues cfg.trafos);
 
-  trafos_call = builtins.concatStringsSep "\n" (
-    builtins.map (trafo: "${trafo}") trafos
-  );
+  trafos_call =
+    builtins.concatStringsSep "\n" (builtins.map (trafo: "${trafo}") trafos);
 
-  matcherType = types.submodule({config, ...}:{
+  matcherType = types.submodule ({ config, ... }: {
     options = {
       pattern = mkOption {
         type = types.str;
@@ -39,7 +38,7 @@ let
       };
     };
   });
-  trafoType = types.submodule({config, ...}:{
+  trafoType = types.submodule ({ config, ... }: {
     options = {
       name = mkOption {
         type = types.str;
@@ -91,8 +90,7 @@ let
       };
     };
   });
-in
-{
+in {
   options.scalpel = {
     secretsDir = mkOption {
       type = types.path;
@@ -118,20 +116,18 @@ in
         grep -q "${cfg.secretsDir} ramfs" /proc/mounts || mount -t ramfs none "${cfg.secretsDir}" -o nodev,nosuid,mode=0751
 
         echo "[scalpel] Clearing old secrets from ${cfg.secretsDir}"
-        rm -rf ${cfg.secretsDir}/{*,.*}
+        find . -name . -o -prune -exec rm -rf -- {} +
       '';
       deps = [ "specialfs" ];
     };
 
     system.activationScripts.scalpel = {
       text = trafos_call;
-      deps = [
-        "users"
-        "groups"
-        "specialfs"
-        "scalpelCreateStore"  
-      ] ++ optional (builtins.hasAttr "setupSecrets" config.system.activationScripts) "setupSecrets"
-        ++ optional (builtins.hasAttr "agenix" config.system.activationScripts) "agenix";
+      deps = [ "users" "groups" "specialfs" "scalpelCreateStore" ] ++ optional
+        (builtins.hasAttr "setupSecrets" config.system.activationScripts)
+        "setupSecrets"
+        ++ optional (builtins.hasAttr "agenix" config.system.activationScripts)
+        "agenix";
     };
   };
 }
