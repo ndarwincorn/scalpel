@@ -1,96 +1,117 @@
 { self }:
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 with lib;
 
 let
   cfg = config.scalpel;
 
-  trafos = builtins.map (trafo:
+  trafos = builtins.map (
+    trafo:
     let
-      matchers = builtins.listToAttrs (builtins.map (matcher: {
-        name = "${matcher.pattern}";
-        value = "${matcher.secret}";
-      }) (builtins.attrValues trafo.matchers));
-    in self.mk_scalpel {
+      matchers = builtins.listToAttrs (
+        builtins.map (matcher: {
+          name = "${matcher.pattern}";
+          value = "${matcher.secret}";
+        }) (builtins.attrValues trafo.matchers)
+      );
+    in
+    self.mk_scalpel {
       inherit matchers;
-      inherit (trafo) source destination mode group;
+      inherit (trafo)
+        source
+        destination
+        mode
+        group
+        ;
       user = trafo.owner;
-    }) (builtins.attrValues cfg.trafos);
+    }
+  ) (builtins.attrValues cfg.trafos);
 
-  trafos_call =
-    builtins.concatStringsSep "\n" (builtins.map (trafo: "${trafo}") trafos);
+  trafos_call = builtins.concatStringsSep "\n" (builtins.map (trafo: "${trafo}") trafos);
 
-  matcherType = types.submodule ({ config, ... }: {
-    options = {
-      pattern = mkOption {
-        type = types.str;
-        default = config._module.args.name;
-        description = ''
-          Pattern to search for (!!PATTERN!!)
-        '';
+  matcherType = types.submodule (
+    { config, ... }:
+    {
+      options = {
+        pattern = mkOption {
+          type = types.str;
+          default = config._module.args.name;
+          description = ''
+            Pattern to search for (!!PATTERN!!)
+          '';
+        };
+        secret = mkOption {
+          type = types.str;
+          description = ''
+            Path to secret
+          '';
+        };
       };
-      secret = mkOption {
-        type = types.str;
-        description = ''
-          Path to secret
-        '';
+    }
+  );
+  trafoType = types.submodule (
+    { config, ... }:
+    {
+      options = {
+        name = mkOption {
+          type = types.str;
+          default = config._module.args.name;
+          description = ''
+            Name of the trafo
+          '';
+        };
+        source = mkOption {
+          type = types.str;
+          description = ''
+            Source file path
+          '';
+        };
+        destination = mkOption {
+          type = types.str;
+          default = "${cfg.secretsDir}/${config.name}";
+          description = ''
+            Destination file path (overriding this may persist your secrets)
+          '';
+        };
+        mode = mkOption {
+          type = types.str;
+          default = "0400";
+          description = ''
+            Destination file mode
+          '';
+        };
+        owner = mkOption {
+          type = types.str;
+          default = "0";
+          description = ''
+            Destination file owner
+          '';
+        };
+        group = mkOption {
+          type = types.str;
+          default = config.users.users.${config.owner}.group or "0";
+          description = ''
+            Destination file owner
+          '';
+        };
+        matchers = mkOption {
+          type = types.attrsOf matcherType;
+          default = { };
+          description = ''
+            Matcher definitions
+          '';
+        };
       };
-    };
-  });
-  trafoType = types.submodule ({ config, ... }: {
-    options = {
-      name = mkOption {
-        type = types.str;
-        default = config._module.args.name;
-        description = ''
-          Name of the trafo
-        '';
-      };
-      source = mkOption {
-        type = types.str;
-        description = ''
-          Source file path
-        '';
-      };
-      destination = mkOption {
-        type = types.str;
-        default = "${cfg.secretsDir}/${config.name}";
-        description = ''
-          Destination file path (overriding this may persist your secrets)
-        '';
-      };
-      mode = mkOption {
-        type = types.str;
-        default = "0400";
-        description = ''
-          Destination file mode
-        '';
-      };
-      owner = mkOption {
-        type = types.str;
-        default = "0";
-        description = ''
-          Destination file owner
-        '';
-      };
-      group = mkOption {
-        type = types.str;
-        default = config.users.users.${config.owner}.group or "0";
-        description = ''
-          Destination file owner
-        '';
-      };
-      matchers = mkOption {
-        type = types.attrsOf matcherType;
-        default = { };
-        description = ''
-          Matcher definitions
-        '';
-      };
-    };
-  });
-in {
+    }
+  );
+in
+{
   options.scalpel = {
     secretsDir = mkOption {
       type = types.path;
@@ -116,18 +137,22 @@ in {
         grep -q "${cfg.secretsDir} ramfs" /proc/mounts || mount -t ramfs none "${cfg.secretsDir}" -o nodev,nosuid,mode=0751
 
         echo "[scalpel] Clearing old secrets from ${cfg.secretsDir}"
-        find . -name . -o -prune -exec rm -rf -- {} +
+        find '${cfg.secretsDir}' -wholename '${cfg.secretsDir}' -o -prune -exec rm -rf -- {} +
       '';
       deps = [ "specialfs" ];
     };
 
     system.activationScripts.scalpel = {
       text = trafos_call;
-      deps = [ "users" "groups" "specialfs" "scalpelCreateStore" ] ++ optional
-        (builtins.hasAttr "setupSecrets" config.system.activationScripts)
-        "setupSecrets"
-        ++ optional (builtins.hasAttr "agenix" config.system.activationScripts)
-        "agenix";
+      deps =
+        [
+          "users"
+          "groups"
+          "specialfs"
+          "scalpelCreateStore"
+        ]
+        ++ optional (builtins.hasAttr "setupSecrets" config.system.activationScripts) "setupSecrets"
+        ++ optional (builtins.hasAttr "agenix" config.system.activationScripts) "agenix";
     };
   };
 }
